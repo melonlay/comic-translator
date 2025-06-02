@@ -139,6 +139,12 @@ class TextTranslator:
                     'estimated_font_size': translation['estimated_font_size']
                 })
             
+            # 驗證輸出數量
+            if len(translated_texts) != len(texts):
+                print(f"⚠️ 翻譯數量不匹配: 輸入 {len(texts)} 個，輸出 {len(translated_texts)} 個")
+                print("📝 這可能表示 AI 刪除了某些段落，將使用備用方法")
+                return self._fallback_translation(texts, terminology_dict, translation_history, image_path)
+            
             print(f"✅ 翻譯完成: {len(translated_texts)} 個文字")
             
             return {
@@ -187,6 +193,11 @@ class TextTranslator:
             visual_analysis_instruction = """
 **重要：請同時分析提供的漫畫圖片，進行OCR校正和視覺特徵分析**
 
+**嚴格規則：絕對不可刪除任何段落！**
+- 必須為每個提供的 OCR 文字提供對應的校正和翻譯結果
+- 即使 OCR 文字看起來有問題，也要嘗試理解並校正，不可跳過或刪除
+- 輸出的翻譯數量必須與輸入的 OCR 文字數量完全一致
+
 圖片分析要求：
 1. **OCR 校正功能**：
    - 將提供的 OCR 識別文字與圖片中的實際文字進行對比
@@ -196,6 +207,7 @@ class TextTranslator:
      * 「ロ」與「口」、「力」與「刀」、「ー」與「一」的混淆
      * 手寫字體可能導致的識別錯誤
      * 特殊字體、斜體文字的識別問題
+   - **注意**：即使無法完全理解 OCR 文字，也要提供最合理的校正版本
 
 2. **實際觀察文字排版**：
    - 仔細觀察每個文字區域的文字是橫向排列還是縱向排列
@@ -211,10 +223,14 @@ class TextTranslator:
    - 根據圖片中文字的實際大小估計像素值（通常8-40像素）
    - 考慮文字與對話框的比例關係
 
-**重要：如果發現 OCR 錯誤，請在翻譯結果中使用校正後的正確文字**"""
+**重要：如果發現 OCR 錯誤，請在翻譯結果中使用校正後的正確文字，但絕對不可刪除任何段落**"""
         else:
             visual_analysis_instruction = """
 **注意：由於沒有提供圖片，無法進行 OCR 校正，請根據文字內容和常見漫畫排版規律進行判斷**
+
+**嚴格規則：絕對不可刪除任何段落！**
+- 必須為每個提供的文字提供對應的翻譯結果
+- 輸出的翻譯數量必須與輸入的文字數量完全一致
 
 推斷規則：
 1. **文字排版方向**：
@@ -234,6 +250,7 @@ class TextTranslator:
 {visual_analysis_instruction}
 
 翻譯和校正原則：
+- **絕對禁止**：刪除任何輸入的文字段落！必須為每個輸入提供對應的輸出
 - **首要任務**：如果提供了圖片，請先校正 OCR 識別錯誤，確保理解正確的原文
 - 保持漫畫對話的自然性和流暢性
 - 維持角色的語調和個性
@@ -244,6 +261,8 @@ class TextTranslator:
 {json.dumps(texts, ensure_ascii=False, indent=2)}
 {terminology_context}
 {history_context}
+
+**重要約束：輸出的翻譯數量必須等於輸入文字數量 ({len(texts)} 個)**
 
 請為每個文字提供：
 1. **校正後的正確日文原文**（如果 OCR 有錯誤）
@@ -381,20 +400,27 @@ class TextTranslator:
         if image_path:
             base_prompt = """你是一個專業的日文漫畫翻譯師和 OCR 校正專家，擅長將日文漫畫對話翻譯成繁體中文。
 
+**嚴格規則：絕對不可刪除任何段落！**
+- 必須為每個提供的 OCR 文字提供對應的校正和翻譯結果
+- 即使 OCR 文字看起來有問題，也要嘗試理解並校正，不可跳過或刪除
+- 輸出的翻譯數量必須與輸入的 OCR 文字數量完全一致
+
 **重要：OCR 校正功能**
 請首先觀察提供的漫畫圖片，對比 OCR 識別的文字與圖片中的實際文字：
 1. 識別可能的 OCR 錯誤（如相似字符混淆、缺字、多字等）
 2. 校正錯誤的文字，確保準確理解原文含義
 3. 常見 OCR 錯誤：「ロ」與「口」、「力」與「刀」、「ー」與「一」的混淆等
+4. **注意**：即使無法完全理解 OCR 文字，也要提供最合理的校正版本
 
 翻譯原則：
-1. **首要任務**：校正 OCR 識別錯誤，確保理解正確的原文
-2. 保持漫畫對話的自然語調和情感
-3. 使用台灣常用的繁體中文表達方式
-4. 保留角色的說話特色和個性
-5. 適當處理擬聲詞和感嘆詞
-6. 確保翻譯符合漫畫的語境和氛圍
-7. 發現並標記新的專有名詞（人名、地名、特殊術語等）
+1. **絕對禁止**：刪除任何輸入的文字段落！必須為每個輸入提供對應的輸出
+2. **首要任務**：校正 OCR 識別錯誤，確保理解正確的原文
+3. 保持漫畫對話的自然語調和情感
+4. 使用台灣常用的繁體中文表達方式
+5. 保留角色的說話特色和個性
+6. 適當處理擬聲詞和感嘆詞
+7. 確保翻譯符合漫畫的語境和氛圍
+8. 發現並標記新的專有名詞（人名、地名、特殊術語等）
 
 輸出格式：
 請按照以下JSON格式輸出（注意：在 "original" 欄位中請提供校正後的正確日文）：
@@ -415,13 +441,18 @@ class TextTranslator:
         else:
             base_prompt = """你是一個專業的日文漫畫翻譯師，擅長將日文漫畫對話翻譯成繁體中文。
 
+**嚴格規則：絕對不可刪除任何段落！**
+- 必須為每個提供的文字提供對應的翻譯結果
+- 輸出的翻譯數量必須與輸入的文字數量完全一致
+
 翻譯原則：
-1. 保持漫畫對話的自然語調和情感
-2. 使用台灣常用的繁體中文表達方式
-3. 保留角色的說話特色和個性
-4. 適當處理擬聲詞和感嘆詞
-5. 確保翻譯符合漫畫的語境和氛圍
-6. 發現並標記新的專有名詞（人名、地名、特殊術語等）
+1. **絕對禁止**：刪除任何輸入的文字段落！必須為每個輸入提供對應的輸出
+2. 保持漫畫對話的自然語調和情感
+3. 使用台灣常用的繁體中文表達方式
+4. 保留角色的說話特色和個性
+5. 適當處理擬聲詞和感嘆詞
+6. 確保翻譯符合漫畫的語境和氛圍
+7. 發現並標記新的專有名詞（人名、地名、特殊術語等）
 
 輸出格式：
 請按照以下JSON格式輸出：
@@ -463,16 +494,16 @@ class TextTranslator:
         
         # 添加待翻譯文字
         if image_path:
-            texts_section = "\n\n待校正和翻譯的 OCR 識別文字：\n"
+            texts_section = f"\n\n待校正和翻譯的 OCR 識別文字（共 {len(texts)} 個，必須全部處理）：\n"
         else:
-            texts_section = "\n\n待翻譯文字：\n"
+            texts_section = f"\n\n待翻譯文字（共 {len(texts)} 個，必須全部處理）：\n"
             
         for i, text in enumerate(texts, 1):
             texts_section += f"{i}. {text}\n"
         
         base_prompt += texts_section
         
-        base_prompt += "\n\n請開始校正和翻譯："
+        base_prompt += f"\n\n**重要提醒：必須輸出 {len(texts)} 個翻譯結果，絕對不可少於這個數量！**\n\n請開始校正和翻譯："
         
         return base_prompt
     
@@ -511,6 +542,9 @@ class TextTranslator:
                             }
                         else:
                             print(f"⚠️ 翻譯數量不匹配: 期望 {len(original_texts)}, 得到 {len(translated_texts)}")
+                            print("📝 這可能表示 AI 刪除了某些段落，將使用備用解析方法")
+                    else:
+                        print("⚠️ 回應中沒有找到 translated_texts 欄位")
                     
                 except json.JSONDecodeError as e:
                     print(f"⚠️ JSON解析失敗: {e}")
@@ -540,19 +574,29 @@ class TextTranslator:
         # 簡單的行對行匹配
         translation_lines = [line.strip() for line in lines if line.strip() and not line.startswith('#') and not line.startswith('```')]
         
+        print(f"🔍 備用解析: 找到 {len(translation_lines)} 行翻譯，需要 {len(original_texts)} 個結果")
+        
         for i, original in enumerate(original_texts):
             if i < len(translation_lines):
                 translated = translation_lines[i]
                 # 清理翻譯文字
                 translated = re.sub(r'^\d+[\.\)]\s*', '', translated)  # 移除開頭的數字
                 translated = translated.strip()
+                
+                # 如果翻譯結果為空或太短，使用原文
+                if not translated or len(translated) < 1:
+                    translated = original
             else:
-                translated = original  # 如果沒有對應翻譯，使用原文
+                # 如果沒有對應翻譯，使用原文
+                translated = original
+                print(f"⚠️ 第 {i+1} 個文字沒有找到翻譯，使用原文: {original}")
             
             translated_texts.append({
                 'original': original,
                 'translated': translated
             })
+        
+        print(f"✅ 備用解析完成: {len(translated_texts)} 個結果")
         
         return {
             'translated_texts': translated_texts,
