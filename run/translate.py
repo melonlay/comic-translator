@@ -152,12 +152,36 @@ class ComicTranslator:
         except Exception as e:
             print(f"⚠️ 保存專有名詞字典失敗: {e}")
     
-    def translate_image(self, image_path: str) -> bool:
+    def _check_existing_translation(self, image_path: Path) -> dict:
+        """
+        檢查是否已存在翻譯結果
+        
+        Args:
+            image_path: 圖片路徑
+            
+        Returns:
+            dict: 如果存在返回翻譯結果，否則返回None
+        """
+        stage4_file = self.stage4_dir / f"{image_path.stem}_stage4_translate.json"
+        
+        if stage4_file.exists():
+            try:
+                with open(stage4_file, 'r', encoding='utf-8') as f:
+                    result = json.load(f)
+                    print(f"📋 找到現有翻譯結果: {stage4_file.name}")
+                    return result
+            except Exception as e:
+                print(f"⚠️ 讀取現有翻譯結果失敗: {e}")
+                
+        return None
+    
+    def translate_image(self, image_path: str, force: bool = False) -> bool:
         """
         翻譯單張圖片
         
         Args:
             image_path: 圖片路徑
+            force: 是否強制重新翻譯，忽略現有結果
             
         Returns:
             bool: 翻譯是否成功
@@ -170,6 +194,17 @@ class ComicTranslator:
         
         print(f"\n🎨 開始翻譯圖片: {image_path.name}")
         print("=" * 70)
+        
+        # 檢查是否已存在翻譯結果（除非強制重新翻譯）
+        if not force:
+            existing_result = self._check_existing_translation(image_path)
+            if existing_result:
+                print(f"✅ 使用現有翻譯結果，跳過翻譯流程")
+                print(f"📄 翻譯文字數量: {len(existing_result.get('translated_texts', []))}")
+                if existing_result.get('new_terminology'):
+                    print(f"📝 包含新專有名詞: {len(existing_result['new_terminology'])} 個")
+                print(f"💡 如需重新翻譯，請使用 --force 參數")
+                return True
         
         try:
             # 階段1: 文字檢測
@@ -204,12 +239,13 @@ class ComicTranslator:
             print(f"❌ 翻譯過程出錯: {e}")
             return False
     
-    def batch_translate_folder(self, folder_path: str) -> list:
+    def batch_translate_folder(self, folder_path: str, force: bool = False) -> list:
         """
         批量翻譯資料夾中的圖片
         
         Args:
             folder_path: 包含圖片的資料夾路徑
+            force: 是否強制重新翻譯，忽略現有結果
             
         Returns:
             list: 成功翻譯的圖片路徑列表
@@ -232,13 +268,15 @@ class ComicTranslator:
         print(f"\n📁 批量翻譯資料夾: {folder_path}")
         print("=" * 70)
         print(f"🖼️ 找到 {len(image_files)} 個圖片檔案")
+        if not force:
+            print(f"💡 將跳過已有翻譯結果的圖片，使用 --force 強制重新翻譯")
         
         translated_files = []
         
         for i, image_file in enumerate(image_files, 1):
             print(f"\n🎨 翻譯第 {i}/{len(image_files)} 張: {image_file.name}")
             
-            success = self.translate_image(str(image_file))
+            success = self.translate_image(str(image_file), force=force)
             if success:
                 translated_files.append(str(image_file))
                 print(f"✅ 翻譯成功")
@@ -395,18 +433,24 @@ def main():
     parser.add_argument('target', help='要翻譯的圖片路徑或資料夾路徑')
     parser.add_argument('--output', '-o', default='output', help='輸出目錄 (預設: output)')
     parser.add_argument('--batch', '-b', action='store_true', help='批量翻譯模式')
+    parser.add_argument('--force', '-f', action='store_true', help='強制重新翻譯，忽略現有結果')
     
     args = parser.parse_args()
     
     print("🎨 漫畫翻譯器 - 翻譯模式")
     print("=" * 70)
     
+    if args.force:
+        print("⚡ 強制模式：將重新翻譯所有圖片")
+    else:
+        print("💾 智能模式：將跳過已有翻譯結果的圖片")
+    
     # 初始化翻譯器
     translator = ComicTranslator(output_dir=args.output)
     
     # 批量翻譯模式
     if args.batch:
-        translated_files = translator.batch_translate_folder(args.target)
+        translated_files = translator.batch_translate_folder(args.target, force=args.force)
         success = len(translated_files) > 0
         
         if success:
@@ -416,7 +460,7 @@ def main():
             print("\n❌ 批量翻譯失敗")
     else:
         # 單張圖片翻譯
-        success = translator.translate_image(args.target)
+        success = translator.translate_image(args.target, force=args.force)
         
         if success:
             print("\n🎉 翻譯任務完成！")

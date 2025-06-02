@@ -15,10 +15,10 @@ from PIL import Image
 class GeminiClient:
     """Gemini API客戶端"""
     
-    def __init__(self, api_key: str = None, model_name: str = 'models/gemini-2.5-flash-preview-05-20'):
+    def __init__(self, api_key: str = None, model_name: str = 'models/gemini-2.0-flash'):
         """
         初始化Gemini客戶端
-        
+        #gemini-2.5-flash-preview-05-20
         Args:
             api_key: API密鑰，如果未提供則從環境變數獲取
             model_name: 模型名稱（使用正確的models/gemini-2.5-flash-preview-05-20）
