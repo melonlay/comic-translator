@@ -63,12 +63,12 @@ pip install -r requirements.txt
 
 Set up Google Gemini API key:
 ```bash
-export GOOGLE_API_KEY="your_api_key_here"
+export genaikey="your_api_key_here"
 ```
 
 Or in Windows PowerShell:
 ```powershell
-$env:GOOGLE_API_KEY="your_api_key_here"
+$env:genaikey="your_api_key_here"
 ```
 
 ## Usage
