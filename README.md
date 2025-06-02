@@ -150,24 +150,6 @@ comic_translator/
 - **對話框類型分析**：針對不同類型的對話框使用不同的背景處理策略
 - **專有名詞一致性**：維護專有名詞對照表確保翻譯一致性
 
-## Git Submodule 管理
-
-本專案使用 git submodule 管理 comic-text-detector 依賴。相關指令：
-
-```bash
-# 初始化並更新 submodule
-git submodule update --init --recursive
-
-# 更新 submodule 到最新版本
-git submodule update --remote
-
-# 檢查 submodule 狀態
-git submodule status
-
-# 在 submodule 目錄中執行 git 操作
-cd comic-text-detector
-git log --oneline -5
-```
 
 ## 授權
 
@@ -183,7 +165,7 @@ git log --oneline -5
 
 ## 作者
 
-專業 Python 工程師
+Cursor IDE and claude-4-sonet, prompt by me 
 
 ## 貢獻
 

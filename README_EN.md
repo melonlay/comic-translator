@@ -150,24 +150,6 @@ comic_translator/
 - **Speech Bubble Type Analysis**: Use different background processing strategies for different types of speech bubbles
 - **Terminology Consistency**: Maintain terminology dictionaries to ensure translation consistency
 
-## Git Submodule Management
-
-This project uses git submodule to manage the comic-text-detector dependency. Related commands:
-
-```bash
-# Initialize and update submodule
-git submodule update --init --recursive
-
-# Update submodule to latest version
-git submodule update --remote
-
-# Check submodule status
-git submodule status
-
-# Execute git operations within submodule directory
-cd comic-text-detector
-git log --oneline -5
-```
 
 ## License
 
@@ -183,7 +165,7 @@ This means:
 
 ## Author
 
-Professional Python Engineer
+Cursor IDE and claude-4-sonet, prompt by me 
 
 ## Contributing
 
