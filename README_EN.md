@@ -17,14 +17,14 @@ A comprehensive comic translation tool that supports automatic text detection, e
 ### 1. Clone this repository (with submodules)
 
 ```bash
-git clone --recurse-submodules <repo URL>
+git clone --recurse-submodules https://github.com/melonlay/comic-translator.git
 cd comic_translator
 ```
 
 Or if you've already cloned the main repository:
 
 ```bash
-git clone <repo URL>
+git clone https://github.com/melonlay/comic-translator.git
 cd comic_translator
 git submodule update --init --recursive
 ```

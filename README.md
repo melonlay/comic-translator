@@ -17,14 +17,14 @@
 ### 1. Clone 本專案（包含 submodules）
 
 ```bash
-git clone --recurse-submodules <repo URL>
+git clone --recurse-submodules https://github.com/melonlay/comic-translator.git
 cd comic_translator
 ```
 
 或者如果已經 clone 了主專案：
 
 ```bash
-git clone <repo URL>
+git clone https://github.com/melonlay/comic-translator.git
 cd comic_translator
 git submodule update --init --recursive
 ```
