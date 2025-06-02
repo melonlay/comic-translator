@@ -33,6 +33,10 @@ comic-text-detector/data/*.ckpt
 # Output directories
 output/
 rendered/
+stage1_detection/
+stage2_ocr/
+stage3_reorder/
+stage4_translate/
 stages_results/
 
 # Test images (may contain copyrighted content)

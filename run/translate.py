@@ -41,11 +41,19 @@ class ComicTranslator:
             output_dir: 輸出目錄
         """
         self.output_dir = Path(output_dir)
-        self.stages_dir = self.output_dir / "stages_results"
         
-        # 確保輸出目錄存在
+        # 創建各階段的輸出目錄
+        self.stage1_dir = self.output_dir / "stage1_detection"
+        self.stage2_dir = self.output_dir / "stage2_ocr"
+        self.stage3_dir = self.output_dir / "stage3_reorder"
+        self.stage4_dir = self.output_dir / "stage4_translate"
+        
+        # 確保所有輸出目錄存在
         self.output_dir.mkdir(exist_ok=True)
-        self.stages_dir.mkdir(exist_ok=True)
+        self.stage1_dir.mkdir(exist_ok=True)
+        self.stage2_dir.mkdir(exist_ok=True)
+        self.stage3_dir.mkdir(exist_ok=True)
+        self.stage4_dir.mkdir(exist_ok=True)
         
         # 初始化各階段組件
         print("🔧 初始化組件...")
@@ -62,7 +70,10 @@ class ComicTranslator:
         
         print(f"✅ 漫畫翻譯器初始化完成")
         print(f"📁 輸出目錄: {self.output_dir}")
-        print(f"📊 階段結果目錄: {self.stages_dir}")
+        print(f"🔍 Stage1 目錄: {self.stage1_dir}")
+        print(f"📝 Stage2 目錄: {self.stage2_dir}")
+        print(f"🔄 Stage3 目錄: {self.stage3_dir}")
+        print(f"🌏 Stage4 目錄: {self.stage4_dir}")
         print(f"📚 專有名詞: {len(self.terminology_dict)} 個詞彙")
     
     def _load_terminology_dict(self) -> dict:
@@ -172,7 +183,7 @@ class ComicTranslator:
                 return False
             
             print(f"✅ 翻譯完成: {image_path.name}")
-            print(f"📄 結果保存在: {self.stages_dir}")
+            print(f"📄 結果保存在: {self.output_dir}")
             return True
             
         except Exception as e:
@@ -229,7 +240,7 @@ class ComicTranslator:
         
         if result and result.get('text_boxes'):
             # 保存結果
-            output_file = self.stages_dir / f"{image_path.stem}_stage1_detection.json"
+            output_file = self.stage1_dir / f"{image_path.stem}_stage1_detection.json"
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
             
@@ -252,7 +263,7 @@ class ComicTranslator:
         
         if result and result.get('extracted_texts'):
             # 保存結果
-            output_file = self.stages_dir / f"{image_path.stem}_stage2_ocr.json"
+            output_file = self.stage2_dir / f"{image_path.stem}_stage2_ocr.json"
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
             
@@ -275,7 +286,7 @@ class ComicTranslator:
         
         if result and result.get('reordered_texts'):
             # 保存結果
-            output_file = self.stages_dir / f"{image_path.stem}_stage3_reorder.json"
+            output_file = self.stage3_dir / f"{image_path.stem}_stage3_reorder.json"
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
             
@@ -353,7 +364,7 @@ class ComicTranslator:
             self._save_terminology_dict(translation_result['new_terminology'])
         
         # 保存結果
-        output_file = self.stages_dir / f"{image_path.stem}_stage4_translate.json"
+        output_file = self.stage4_dir / f"{image_path.stem}_stage4_translate.json"
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         

@@ -38,7 +38,7 @@ class ComicRenderer:
             output_dir: 輸出目錄
         """
         self.output_dir = Path(output_dir)
-        self.stages_dir = self.output_dir / "stages_results"
+        self.stage4_dir = self.output_dir / "stage4_translate"
         self.rendered_dir = self.output_dir / "rendered"
         
         # 確保目錄存在
@@ -50,7 +50,7 @@ class ComicRenderer:
         
         print(f"✅ 漫畫渲染器初始化完成")
         print(f"📁 輸出目錄: {self.output_dir}")
-        print(f"📊 階段結果目錄: {self.stages_dir}")
+        print(f"🌏 Stage4 目錄: {self.stage4_dir}")
         print(f"🎨 渲染結果目錄: {self.rendered_dir}")
     
     def render_image(self, image_path: str) -> str:
@@ -70,7 +70,7 @@ class ComicRenderer:
             return None
         
         # 檢查翻譯結果是否存在
-        stage4_json = self.stages_dir / f"{image_path.stem}_stage4_translate.json"
+        stage4_json = self.stage4_dir / f"{image_path.stem}_stage4_translate.json"
         if not stage4_json.exists():
             print(f"❌ 翻譯結果不存在: {stage4_json}")
             print("💡 請先運行: python run/translate.py <image_path>")
@@ -126,7 +126,7 @@ class ComicRenderer:
         for file_path in folder.iterdir():
             if file_path.is_file() and file_path.suffix.lower() in image_extensions:
                 # 檢查是否有對應的翻譯結果
-                stage4_json = self.stages_dir / f"{file_path.stem}_stage4_translate.json"
+                stage4_json = self.stage4_dir / f"{file_path.stem}_stage4_translate.json"
                 if stage4_json.exists():
                     image_files.append(file_path)
         
@@ -158,13 +158,13 @@ class ComicRenderer:
         Returns:
             list: 可渲染的圖片名稱列表
         """
-        if not self.stages_dir.exists():
+        if not self.stage4_dir.exists():
             return []
         
         available_images = []
         
         # 查找所有stage4翻譯結果
-        for json_file in self.stages_dir.glob("*_stage4_translate.json"):
+        for json_file in self.stage4_dir.glob("*_stage4_translate.json"):
             image_name = json_file.stem.replace("_stage4_translate", "")
             available_images.append(image_name)
         
