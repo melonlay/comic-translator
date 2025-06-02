@@ -59,6 +59,7 @@ Thumbs.db
 
 # Test files and temporary files
 test_*.py
+test_ocr_correction.py
 temp_*
 debug_*
 *.tmp

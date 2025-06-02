@@ -4,13 +4,14 @@ A comprehensive comic translation tool that supports automatic text detection, e
 
 ## Features
 
-1. **Text Box Detection** - Automatically detect text box regions in comics
-2. **Text Extraction** - Extract text content using OCR technology
-3. **Smart Translation** - Context-aware translation using Google Gemini API
-4. **Terminology Management** - Maintain translation dictionaries for character names, locations, cultural settings
-5. **Intelligent Background Repair** - Use image inpainting techniques to completely remove original text and naturally reconstruct backgrounds
-6. **Multi-directional Text Support** - Support both horizontal and vertical text layouts
-7. **Speech Bubble Type Recognition** - Automatically identify different types of speech bubbles (pure white, textured, transparent)
+1. **Text Detection** - Automatically detect text regions in manga
+2. **Text Extraction** - Extract text using OCR technology
+3. **OCR Correction** - Intelligently correct OCR recognition errors for accurate translation
+4. **Smart Translation** - Context-aware translation using Google Gemini API
+5. **Terminology Management** - Maintain translation dictionaries for character names, locations, cultural settings
+6. **Intelligent Background Repair** - Use image inpainting techniques to completely remove original text and naturally reconstruct backgrounds
+7. **Multi-directional Text Support** - Support both horizontal and vertical text layouts
+8. **Speech Bubble Type Recognition** - Automatically identify different types of speech bubbles (pure white, textured, transparent)
 
 ## Installation Steps
 
@@ -140,13 +141,14 @@ comic_translator/
 └── tests/                  # Test files
 ```
 
-## Technical Features
+## Technical Highlights
 
-- **Intelligent Background Repair**: Uses OpenCV image inpainting algorithms to completely remove text traces
-- **Multi-language Support**: Supports OCR and translation for Chinese, Japanese, and other languages
-- **Text Direction Detection**: Automatically recognizes horizontal/vertical layouts and processes accordingly
-- **Speech Bubble Type Analysis**: Uses different background processing strategies for different types of speech bubbles
-- **Terminology Consistency**: Maintains terminology dictionaries to ensure translation consistency
+- **OCR Correction**: Automatically identify and correct common OCR errors, such as similar character confusion (「ロ」vs「口」, 「力」vs「刀」, etc.)
+- **Intelligent Background Repair**: Use OpenCV image inpainting algorithms to completely eliminate text traces
+- **Multi-language Support**: Support OCR and translation for Chinese, Japanese, and other languages
+- **Text Direction Detection**: Automatically identify horizontal/vertical layouts and handle accordingly
+- **Speech Bubble Type Analysis**: Use different background processing strategies for different types of speech bubbles
+- **Terminology Consistency**: Maintain terminology dictionaries to ensure translation consistency
 
 ## Git Submodule Management
 

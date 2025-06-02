@@ -150,7 +150,7 @@ class TextTranslator:
         except Exception as e:
             print(f"⚠️ Structured翻譯失敗，使用備用方法: {e}")
             # 回退到舊方法
-            return self._fallback_translation(texts, terminology_dict, translation_history)
+            return self._fallback_translation(texts, terminology_dict, translation_history, image_path)
     
     def _create_enhanced_translation_prompt(self, texts: List[str], terminology_dict: Dict[str, str], 
                                           translation_history: List[Dict[str, str]] = None, 
@@ -185,25 +185,36 @@ class TextTranslator:
         # 根據是否有圖片調整提示詞
         if image_path:
             visual_analysis_instruction = """
-**重要：請同時分析提供的漫畫圖片，觀察每個文字區域的實際特徵**
+**重要：請同時分析提供的漫畫圖片，進行OCR校正和視覺特徵分析**
 
 圖片分析要求：
-1. **實際觀察文字排版**：
+1. **OCR 校正功能**：
+   - 將提供的 OCR 識別文字與圖片中的實際文字進行對比
+   - 識別可能的 OCR 錯誤（如相似字符混淆、缺字、多字等）
+   - 校正錯誤的文字，確保準確理解原文含義
+   - 常見 OCR 錯誤示例：
+     * 「ロ」與「口」、「力」與「刀」、「ー」與「一」的混淆
+     * 手寫字體可能導致的識別錯誤
+     * 特殊字體、斜體文字的識別問題
+
+2. **實際觀察文字排版**：
    - 仔細觀察每個文字區域的文字是橫向排列還是縱向排列
    - horizontal：文字從左到右水平排列
    - vertical：文字從上到下垂直排列
 
-2. **對話框背景分析**：
+3. **對話框背景分析**：
    - pure_white：純白色背景，邊緣清晰的對話框
    - textured：有漸變、陰影、紋理的對話框背景
    - transparent：透明或半透明的對話框
 
-3. **字體大小估計**：
+4. **字體大小估計**：
    - 根據圖片中文字的實際大小估計像素值（通常8-40像素）
-   - 考慮文字與對話框的比例關係"""
+   - 考慮文字與對話框的比例關係
+
+**重要：如果發現 OCR 錯誤，請在翻譯結果中使用校正後的正確文字**"""
         else:
             visual_analysis_instruction = """
-**注意：由於沒有提供圖片，請根據文字內容和常見漫畫排版規律進行判斷**
+**注意：由於沒有提供圖片，無法進行 OCR 校正，請根據文字內容和常見漫畫排版規律進行判斷**
 
 推斷規則：
 1. **文字排版方向**：
@@ -218,27 +229,31 @@ class TextTranslator:
    - 對話文字通常 12-20 像素
    - 旁白文字通常 10-16 像素"""
 
-        return f"""你是專業的日文漫畫翻譯專家。請翻譯以下日文文字為繁體中文，並分析每個文字的排版和對話框特徵。
+        return f"""你是專業的日文漫畫翻譯專家和 OCR 校正專家。請分析提供的 OCR 識別文字，校正可能的錯誤，然後將正確的日文翻譯為繁體中文。
 
 {visual_analysis_instruction}
 
-翻譯原則：
+翻譯和校正原則：
+- **首要任務**：如果提供了圖片，請先校正 OCR 識別錯誤，確保理解正確的原文
 - 保持漫畫對話的自然性和流暢性
 - 維持角色的語調和個性
 - 專有名詞必須保持一致性
 - 考慮上下文連貫性
 
-待翻譯文字：
+待處理的 OCR 識別文字：
 {json.dumps(texts, ensure_ascii=False, indent=2)}
 {terminology_context}
 {history_context}
 
 請為每個文字提供：
-1. 準確的繁體中文翻譯
-2. 文字排版方向判斷（horizontal/vertical）
-3. 對話框類型判斷（pure_white/textured/transparent）
-4. 估計的字體大小（像素值）
-5. 發現的新專有名詞
+1. **校正後的正確日文原文**（如果 OCR 有錯誤）
+2. 準確的繁體中文翻譯
+3. 文字排版方向判斷（horizontal/vertical）
+4. 對話框類型判斷（pure_white/textured/transparent）
+5. 估計的字體大小（像素值）
+6. 發現的新專有名詞
+
+注意：在 "original" 欄位中請提供校正後的正確日文，而不是 OCR 的錯誤識別結果。
 
 輸出必須是有效的JSON格式。"""
     
@@ -262,14 +277,16 @@ class TextTranslator:
         return self.translate_texts_with_history(texts, terminology_dict, [], image_path)
     
     def _fallback_translation(self, texts: List[str], terminology_dict: Dict[str, str], 
-                             translation_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
+                             translation_history: List[Dict[str, str]] = None, 
+                             image_path: str = None) -> Dict[str, Any]:
         """
-        備用翻譯方法
+        備用翻譯方法（支援圖片 OCR 校正）
         
         Args:
             texts: 要翻譯的文字列表
             terminology_dict: 專有名詞字典
             translation_history: 翻譯歷史上下文
+            image_path: 圖片路徑，用於 OCR 校正
             
         Returns:
             Dict: 翻譯結果
@@ -284,20 +301,28 @@ class TextTranslator:
         print(f"🔄 開始翻譯 {len(texts)} 個文字")
         if translation_history:
             print(f"📚 使用 {len(translation_history)} 條歷史翻譯作為上下文")
+        if image_path:
+            print(f"📷 使用圖片進行 OCR 校正: {Path(image_path).name}")
         
         start_time = time.time()
         
         try:
             # 準備翻譯提示詞，包含歷史上下文
             prompt = self._prepare_translation_prompt_with_history(
-                texts, terminology_dict or {}, translation_history or []
+                texts, terminology_dict or {}, translation_history or [], image_path
             )
             
             # 呼叫Gemini API
             self.api_call_count += 1
-            print(f"💰 API 呼叫 #{self.api_call_count} - 模型: {self.gemini_client.model}")
+            print(f"💰 API 呼叫 #{self.api_call_count} - 模型: {self.gemini_client.model_name}")
             
-            response = self.gemini_client.generate_content(prompt)
+            # 根據是否有圖片選擇 API 方法
+            if image_path and Path(image_path).exists():
+                response = self.gemini_client.generate_content_with_image(prompt, image_path)
+                print("✅ 使用圖片進行 OCR 校正翻譯")
+            else:
+                response = self.gemini_client.generate_content(prompt)
+                print("⚠️ 使用純文字翻譯（無 OCR 校正）")
             
             if not response:
                 print("❌ API 回應為空")
@@ -317,17 +342,17 @@ class TextTranslator:
             print(f"📝 成功翻譯: {len(result['translated_texts'])}/{len(texts)}")
             print(f"🆕 發現新專有名詞: {len(result['new_terminology'])}")
             
-            result['success'] = True
-            result['processing_time'] = processing_time
-            result['api_calls'] = self.api_call_count
-            
-            return result
+            return {
+                'translated_texts': result['translated_texts'],
+                'new_terminology': result['new_terminology'],
+                'success': True
+            }
             
         except Exception as e:
-            print(f"❌ 翻譯失敗: {e}")
+            print(f"❌ 翻譯過程出錯: {e}")
             return {
-                'translated_texts': [{'original': text, 'translated': text} for text in texts],
-                'new_terminology': [],
+                'translated_texts': self._create_fallback_translations(texts),
+                'new_terminology': {},
                 'success': False,
                 'error': str(e)
             }
@@ -336,22 +361,59 @@ class TextTranslator:
         self, 
         texts: List[str], 
         terminology_dict: Dict[str, str],
-        translation_history: List[Dict[str, str]]
+        translation_history: List[Dict[str, str]],
+        image_path: str = None
     ) -> str:
         """
-        準備包含歷史上下文的翻譯提示詞
+        準備包含歷史上下文的翻譯提示詞（支援 OCR 校正）
         
         Args:
             texts: 要翻譯的文字
             terminology_dict: 專有名詞字典
             translation_history: 翻譯歷史
+            image_path: 圖片路徑
             
         Returns:
             str: 翻譯提示詞
         """
         
-        # 基本翻譯指示
-        base_prompt = """你是一個專業的日文漫畫翻譯師，擅長將日文漫畫對話翻譯成繁體中文。
+        # 根據是否有圖片調整基本提示詞
+        if image_path:
+            base_prompt = """你是一個專業的日文漫畫翻譯師和 OCR 校正專家，擅長將日文漫畫對話翻譯成繁體中文。
+
+**重要：OCR 校正功能**
+請首先觀察提供的漫畫圖片，對比 OCR 識別的文字與圖片中的實際文字：
+1. 識別可能的 OCR 錯誤（如相似字符混淆、缺字、多字等）
+2. 校正錯誤的文字，確保準確理解原文含義
+3. 常見 OCR 錯誤：「ロ」與「口」、「力」與「刀」、「ー」與「一」的混淆等
+
+翻譯原則：
+1. **首要任務**：校正 OCR 識別錯誤，確保理解正確的原文
+2. 保持漫畫對話的自然語調和情感
+3. 使用台灣常用的繁體中文表達方式
+4. 保留角色的說話特色和個性
+5. 適當處理擬聲詞和感嘆詞
+6. 確保翻譯符合漫畫的語境和氛圍
+7. 發現並標記新的專有名詞（人名、地名、特殊術語等）
+
+輸出格式：
+請按照以下JSON格式輸出（注意：在 "original" 欄位中請提供校正後的正確日文）：
+{
+  "translated_texts": [
+    {
+      "original": "校正後的正確日文原文",
+      "translated": "翻譯結果"
+    }
+  ],
+  "new_terminology": [
+    {
+      "japanese": "日文原文",
+      "chinese": "中文翻譯"
+    }
+  ]
+}"""
+        else:
+            base_prompt = """你是一個專業的日文漫畫翻譯師，擅長將日文漫畫對話翻譯成繁體中文。
 
 翻譯原則：
 1. 保持漫畫對話的自然語調和情感
@@ -400,13 +462,17 @@ class TextTranslator:
             base_prompt += history_section
         
         # 添加待翻譯文字
-        texts_section = "\n\n待翻譯文字：\n"
+        if image_path:
+            texts_section = "\n\n待校正和翻譯的 OCR 識別文字：\n"
+        else:
+            texts_section = "\n\n待翻譯文字：\n"
+            
         for i, text in enumerate(texts, 1):
             texts_section += f"{i}. {text}\n"
         
         base_prompt += texts_section
         
-        base_prompt += "\n\n請開始翻譯："
+        base_prompt += "\n\n請開始校正和翻譯："
         
         return base_prompt
     
@@ -508,33 +574,47 @@ class TextTranslator:
     
     def translate_single(self, text: str, terminology_dict: Dict[str, str] = None) -> Dict[str, Any]:
         """
-        翻譯單一文字
+        翻譯單個文字
         
         Args:
-            text: 需要翻譯的文字
+            text: 要翻譯的文字
             terminology_dict: 專有名詞字典
             
         Returns:
             Dict: 翻譯結果
         """
-        result = self.translate_texts([{
-            'original_index': 0,
-            'new_order': 0,
-            'bbox': [0, 0, 0, 0],
-            'text': text
-        }], terminology_dict)
+        result = self.translate_texts([text], terminology_dict)
         
-        if result['translated_texts']:
+        if result['success'] and result['translated_texts']:
+            return {
+                'original': result['translated_texts'][0]['original'],
+                'translated': result['translated_texts'][0]['translated'],
+                'success': True
+            }
+        else:
             return {
                 'original': text,
-                'translation': result['translated_texts'][0]['translation'],
-                'new_terminology': result['new_terminology'],
-                'success': result['success']
+                'translated': text,
+                'success': False
             }
+    
+    def _create_fallback_translations(self, texts: List[str]) -> List[Dict[str, str]]:
+        """
+        創建備用翻譯結果（當翻譯失敗時使用）
         
-        return {
-            'original': text,
-            'translation': text,
-            'new_terminology': [],
-            'success': False
-        } 
+        Args:
+            texts: 原始文字列表
+            
+        Returns:
+            List[Dict]: 備用翻譯結果
+        """
+        return [
+            {
+                'original': text,
+                'translated': text,
+                'text_direction': 'horizontal',
+                'bubble_type': 'pure_white',
+                'estimated_font_size': 16
+            }
+            for text in texts
+        ] 
