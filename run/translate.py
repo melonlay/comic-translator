@@ -19,6 +19,7 @@ import sys
 import os
 from pathlib import Path
 import argparse
+import datetime
 
 # 添加專案路徑
 sys.path.append(str(Path(__file__).parent.parent))
@@ -108,32 +109,45 @@ class ComicTranslator:
                 with open(terminology_file, 'r', encoding='utf-8') as f:
                     current_data = json.load(f)
             
-            # 更新ja_to_zh
-            ja_to_zh = current_data.get('ja_to_zh', {})
+            # 獲取現有的專有名詞字典
+            terminology = current_data.get('ja_to_zh', {})
+            
+            added_count = 0
             updated_count = 0
             
+            # 處理新的專有名詞
             for jp_term, cn_term in new_terminology.items():
-                if jp_term not in ja_to_zh:
-                    ja_to_zh[jp_term] = cn_term
-                    updated_count += 1
+                if not jp_term or not cn_term:
+                    continue
+                
+                if jp_term in terminology:
+                    if terminology[jp_term] != cn_term:
+                        print(f"🔄 更新專有名詞: {jp_term}")
+                        print(f"   舊: {terminology[jp_term]}")
+                        print(f"   新: {cn_term}")
+                        terminology[jp_term] = cn_term
+                        updated_count += 1
+                else:
                     print(f"📝 新增專有名詞: {jp_term} → {cn_term}")
+                    terminology[jp_term] = cn_term
+                    added_count += 1
             
-            if updated_count > 0:
-                # 更新metadata
-                import datetime
-                current_data['ja_to_zh'] = ja_to_zh
+            if added_count > 0 or updated_count > 0:
+                # 更新數據結構
+                current_data['ja_to_zh'] = terminology
                 current_data.setdefault('metadata', {})
                 current_data['metadata']['updated_at'] = datetime.datetime.now().isoformat()
-                current_data['metadata']['total_terms'] = len(ja_to_zh)
+                current_data['metadata']['total_terms'] = len(terminology)
+                current_data['metadata']['version'] = '1.0'
                 
                 # 保存文件
                 with open(terminology_file, 'w', encoding='utf-8') as f:
                     json.dump(current_data, f, ensure_ascii=False, indent=2)
                 
-                print(f"✅ 專有名詞字典已更新: +{updated_count} 個新詞彙")
+                print(f"✅ 專有名詞字典已更新: +{added_count} 新增, {updated_count} 更新")
                 
                 # 更新內存中的字典
-                self.terminology_dict = ja_to_zh
+                self.terminology_dict = terminology
                 
         except Exception as e:
             print(f"⚠️ 保存專有名詞字典失敗: {e}")

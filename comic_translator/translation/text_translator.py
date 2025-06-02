@@ -2,7 +2,7 @@
 Text Translator
 文字翻譯器
 
-使用Gemini進行文字翻譯，支援歷史上下文
+使用Gemini進行文字翻譯，支援歷史上下文和圖片分析
 """
 
 import json
@@ -18,7 +18,7 @@ class TextTranslator:
     文字翻譯器
     Text Translator
     
-    使用Gemini進行智能翻譯，支援歷史上下文
+    使用Gemini進行智能翻譯，支援歷史上下文和圖片分析
     """
     
     def __init__(self, gemini_client: GeminiClient):
@@ -48,7 +48,7 @@ class TextTranslator:
             texts: 待翻譯的文字列表
             terminology_dict: 專有名詞字典
             translation_history: 翻譯歷史上下文
-            image_path: 圖片路徑，用於視覺分析
+            image_path: 圖片路徑，用於視覺分析（必須提供）
             
         Returns:
             Dict: 翻譯結果
@@ -56,9 +56,12 @@ class TextTranslator:
         if not texts:
             return {'translated_texts': [], 'new_terminology': {}, 'success': False}
         
+        if not image_path or not Path(image_path).exists():
+            print("❌ 所有翻譯都必須提供有效的圖片路徑")
+            return {'translated_texts': [], 'new_terminology': {}, 'success': False}
+        
         print(f"🌐 開始翻譯 {len(texts)} 個文字...")
-        if image_path:
-            print(f"📷 使用圖片分析: {Path(image_path).name}")
+        print(f"📷 使用圖片分析: {Path(image_path).name}")
         
         # 使用structured output進行翻譯
         response_schema = {
@@ -91,7 +94,7 @@ class TextTranslator:
                 },
                 "new_terminology": {
                     "type": "array",
-                    "description": "發現的新專有名詞",
+                    "description": "發現的新專有名詞列表",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -105,24 +108,18 @@ class TextTranslator:
             "required": ["translations", "new_terminology"]
         }
         
-        prompt = self._create_enhanced_translation_prompt(texts, terminology_dict, translation_history, image_path)
+        prompt = self._create_translation_prompt(texts, terminology_dict, translation_history, image_path)
         
         try:
-            # 如果有圖片，使用圖片分析功能
-            if image_path and Path(image_path).exists():
-                result = self.gemini_client.generate_structured_content_with_image(
-                    prompt, image_path, response_schema
-                )
-                print("✅ 使用圖片視覺分析進行翻譯")
-            else:
-                # 沒有圖片時使用純文字分析
-                result = self.gemini_client.generate_structured_content(prompt, response_schema)
-                print("⚠️ 未提供圖片，使用純文字分析")
+            result = self.gemini_client.generate_structured_content_with_image(
+                prompt, image_path, response_schema
+            )
+            print("✅ 使用圖片視覺分析進行翻譯")
             
             translations = result.get('translations', [])
             new_terminology = result.get('new_terminology', [])
             
-            # 將 new_terminology 從數組格式轉換為字典格式
+            # 將new_terminology從array轉換為dict格式
             terminology_dict = {}
             for term in new_terminology:
                 if isinstance(term, dict) and 'japanese' in term and 'chinese' in term:
@@ -142,8 +139,8 @@ class TextTranslator:
             # 驗證輸出數量
             if len(translated_texts) != len(texts):
                 print(f"⚠️ 翻譯數量不匹配: 輸入 {len(texts)} 個，輸出 {len(translated_texts)} 個")
-                print("📝 這可能表示 AI 刪除了某些段落，將使用備用方法")
-                return self._fallback_translation(texts, terminology_dict, translation_history, image_path)
+                print("📝 AI可能刪除了某些段落，將使用簡單翻譯方法")
+                return self._simple_translation(texts, terminology_dict, translation_history, image_path)
             
             print(f"✅ 翻譯完成: {len(translated_texts)} 個文字")
             
@@ -154,15 +151,14 @@ class TextTranslator:
             }
             
         except Exception as e:
-            print(f"⚠️ Structured翻譯失敗，使用備用方法: {e}")
-            # 回退到舊方法
-            return self._fallback_translation(texts, terminology_dict, translation_history, image_path)
+            print(f"⚠️ Structured翻譯失敗，使用簡單方法: {e}")
+            return self._simple_translation(texts, terminology_dict, translation_history, image_path)
     
-    def _create_enhanced_translation_prompt(self, texts: List[str], terminology_dict: Dict[str, str], 
-                                          translation_history: List[Dict[str, str]] = None, 
-                                          image_path: str = None) -> str:
+    def _create_translation_prompt(self, texts: List[str], terminology_dict: Dict[str, str], 
+                                  translation_history: List[Dict[str, str]] = None, 
+                                  image_path: str = None) -> str:
         """
-        創建增強的翻譯提示詞（包含排版和對話框分析）
+        創建翻譯提示詞
         
         Args:
             texts: 待翻譯文字
@@ -187,10 +183,9 @@ class TextTranslator:
             terminology_context = "\n\n專有名詞字典（必須使用一致翻譯）：\n"
             for jp, cn in terminology_dict.items():
                 terminology_context += f"「{jp}」→「{cn}」\n"
-        
-        # 根據是否有圖片調整提示詞
-        if image_path:
-            visual_analysis_instruction = """
+
+        return f"""你是專業的日文漫畫翻譯專家和 OCR 校正專家。請分析提供的 OCR 識別文字，校正可能的錯誤，然後將正確的日文翻譯為繁體中文。
+
 **重要：請同時分析提供的漫畫圖片，進行OCR校正和視覺特徵分析**
 
 **嚴格規則：絕對不可刪除任何段落！**
@@ -223,39 +218,22 @@ class TextTranslator:
    - 根據圖片中文字的實際大小估計像素值（通常8-40像素）
    - 考慮文字與對話框的比例關係
 
-**重要：如果發現 OCR 錯誤，請在翻譯結果中使用校正後的正確文字，但絕對不可刪除任何段落**"""
-        else:
-            visual_analysis_instruction = """
-**注意：由於沒有提供圖片，無法進行 OCR 校正，請根據文字內容和常見漫畫排版規律進行判斷**
-
-**嚴格規則：絕對不可刪除任何段落！**
-- 必須為每個提供的文字提供對應的翻譯結果
-- 輸出的翻譯數量必須與輸入的文字數量完全一致
-
-推斷規則：
-1. **文字排版方向**：
-   - 短句、對話通常用 horizontal
-   - 長段落、旁白通常用 vertical
-   
-2. **對話框類型**：
-   - 對話文字通常用 pure_white
-   - 旁白、思考文字可能用 textured
-   
-3. **字體大小**：
-   - 對話文字通常 12-20 像素
-   - 旁白文字通常 10-16 像素"""
-
-        return f"""你是專業的日文漫畫翻譯專家和 OCR 校正專家。請分析提供的 OCR 識別文字，校正可能的錯誤，然後將正確的日文翻譯為繁體中文。
-
-{visual_analysis_instruction}
-
 翻譯和校正原則：
 - **絕對禁止**：刪除任何輸入的文字段落！必須為每個輸入提供對應的輸出
-- **首要任務**：如果提供了圖片，請先校正 OCR 識別錯誤，確保理解正確的原文
+- **首要任務**：校正 OCR 識別錯誤，確保理解正確的原文
 - 保持漫畫對話的自然性和流暢性
 - 維持角色的語調和個性
 - 專有名詞必須保持一致性
 - 考慮上下文連貫性
+
+**關鍵翻譯邏輯**：
+1. **檢查專有名詞字典**：查看字典中是否有該詞彙的翻譯
+2. **敬語翻譯規則**：
+   - 如果字典中有「人名(男性)」，則「人名さん」翻譯為「人名先生」
+   - 如果字典中有「人名(女性)」，則「人名さん」翻譯為「人名小姐」
+   - 例如：字典中「キクル(男性)」→「キクルさん」翻譯為「奇庫魯先生」
+   - 例如：字典中「エノメ(女性)」→「エノメさん」翻譯為「艾諾梅小姐」
+3. **新角色處理**：如果字典中沒有該角色，根據圖片和上下文判斷性別，然後正確翻譯敬語，並在new_terminology中記錄為「人名(性別)」
 
 待處理的 OCR 識別文字：
 {json.dumps(texts, ensure_ascii=False, indent=2)}
@@ -266,46 +244,27 @@ class TextTranslator:
 
 請為每個文字提供：
 1. **校正後的正確日文原文**（如果 OCR 有錯誤）
-2. 準確的繁體中文翻譯
+2. 準確的繁體中文翻譯（注意性別正確性）
 3. 文字排版方向判斷（horizontal/vertical）
 4. 對話框類型判斷（pure_white/textured/transparent）
 5. 估計的字體大小（像素值）
-6. 發現的新專有名詞
+6. 發現的新專有名詞（格式：日文->中文，如果是人名請在中文後加(男性)或(女性)）
 
 注意：在 "original" 欄位中請提供校正後的正確日文，而不是 OCR 的錯誤識別結果。
 
 輸出必須是有效的JSON格式。"""
     
-    def translate_texts(
-        self, 
-        texts: List[str], 
-        terminology_dict: Dict[str, str] = None,
-        image_path: str = None
-    ) -> Dict[str, Any]:
+    def _simple_translation(self, texts: List[str], terminology_dict: Dict[str, str], 
+                           translation_history: List[Dict[str, str]] = None, 
+                           image_path: str = None) -> Dict[str, Any]:
         """
-        翻譯文字列表（不使用歷史上下文）
-        
-        Args:
-            texts: 要翻譯的文字列表
-            terminology_dict: 專有名詞字典
-            image_path: 圖片路徑，用於視覺分析
-            
-        Returns:
-            Dict: 翻譯結果
-        """
-        return self.translate_texts_with_history(texts, terminology_dict, [], image_path)
-    
-    def _fallback_translation(self, texts: List[str], terminology_dict: Dict[str, str], 
-                             translation_history: List[Dict[str, str]] = None, 
-                             image_path: str = None) -> Dict[str, Any]:
-        """
-        備用翻譯方法（支援圖片 OCR 校正）
+        簡單翻譯方法（當structured方法失敗時使用）
         
         Args:
             texts: 要翻譯的文字列表
             terminology_dict: 專有名詞字典
             translation_history: 翻譯歷史上下文
-            image_path: 圖片路徑，用於 OCR 校正
+            image_path: 圖片路徑
             
         Returns:
             Dict: 翻譯結果
@@ -317,43 +276,35 @@ class TextTranslator:
                 'success': False
             }
         
-        print(f"🔄 開始翻譯 {len(texts)} 個文字")
+        print(f"🔄 開始簡單翻譯 {len(texts)} 個文字")
         if translation_history:
             print(f"📚 使用 {len(translation_history)} 條歷史翻譯作為上下文")
-        if image_path:
-            print(f"📷 使用圖片進行 OCR 校正: {Path(image_path).name}")
+        print(f"📷 使用圖片進行 OCR 校正: {Path(image_path).name}")
         
         start_time = time.time()
         
         try:
             # 準備翻譯提示詞，包含歷史上下文
-            prompt = self._prepare_translation_prompt_with_history(
-                texts, terminology_dict or {}, translation_history or [], image_path
-            )
+            prompt = self._create_simple_prompt(texts, terminology_dict or {}, translation_history or [], image_path)
             
             # 呼叫Gemini API
             self.api_call_count += 1
             print(f"💰 API 呼叫 #{self.api_call_count} - 模型: {self.gemini_client.model_name}")
             
-            # 根據是否有圖片選擇 API 方法
-            if image_path and Path(image_path).exists():
-                response = self.gemini_client.generate_content_with_image(prompt, image_path)
-                print("✅ 使用圖片進行 OCR 校正翻譯")
-            else:
-                response = self.gemini_client.generate_content(prompt)
-                print("⚠️ 使用純文字翻譯（無 OCR 校正）")
+            response = self.gemini_client.generate_content_with_image(prompt, image_path)
+            print("✅ 使用圖片進行 OCR 校正翻譯")
             
             if not response:
                 print("❌ API 回應為空")
                 return {
-                    'translated_texts': [],
+                    'translated_texts': self._create_fallback_translations(texts),
                     'new_terminology': [],
                     'success': False,
                     'error': 'Empty API response'
                 }
             
             # 解析翻譯結果
-            result = self._parse_translation_response_with_terminology(response, texts)
+            result = self._parse_simple_response(response, texts)
             
             processing_time = time.time() - start_time
             
@@ -371,20 +322,15 @@ class TextTranslator:
             print(f"❌ 翻譯過程出錯: {e}")
             return {
                 'translated_texts': self._create_fallback_translations(texts),
-                'new_terminology': {},
+                'new_terminology': [],
                 'success': False,
                 'error': str(e)
             }
     
-    def _prepare_translation_prompt_with_history(
-        self, 
-        texts: List[str], 
-        terminology_dict: Dict[str, str],
-        translation_history: List[Dict[str, str]],
-        image_path: str = None
-    ) -> str:
+    def _create_simple_prompt(self, texts: List[str], terminology_dict: Dict[str, str],
+                             translation_history: List[Dict[str, str]], image_path: str) -> str:
         """
-        準備包含歷史上下文的翻譯提示詞（支援 OCR 校正）
+        創建簡單翻譯提示詞
         
         Args:
             texts: 要翻譯的文字
@@ -395,10 +341,7 @@ class TextTranslator:
         Returns:
             str: 翻譯提示詞
         """
-        
-        # 根據是否有圖片調整基本提示詞
-        if image_path:
-            base_prompt = """你是一個專業的日文漫畫翻譯師和 OCR 校正專家，擅長將日文漫畫對話翻譯成繁體中文。
+        base_prompt = """你是一個專業的日文漫畫翻譯師和 OCR 校正專家，擅長將日文漫畫對話翻譯成繁體中文。
 
 **嚴格規則：絕對不可刪除任何段落！**
 - 必須為每個提供的 OCR 文字提供對應的校正和翻譯結果
@@ -412,6 +355,12 @@ class TextTranslator:
 3. 常見 OCR 錯誤：「ロ」與「口」、「力」與「刀」、「ー」與「一」的混淆等
 4. **注意**：即使無法完全理解 OCR 文字，也要提供最合理的校正版本
 
+**專有名詞處理**：
+- 檢查字典中是否有該詞彙的翻譯
+- 如果字典中有「人名(男性)」，則「人名さん」翻譯為「人名先生」
+- 如果字典中有「人名(女性)」，則「人名さん」翻譯為「人名小姐」
+- 新發現的人名請在中文後標記(男性)或(女性)
+
 翻譯原則：
 1. **絕對禁止**：刪除任何輸入的文字段落！必須為每個輸入提供對應的輸出
 2. **首要任務**：校正 OCR 識別錯誤，確保理解正確的原文
@@ -423,53 +372,15 @@ class TextTranslator:
 8. 發現並標記新的專有名詞（人名、地名、特殊術語等）
 
 輸出格式：
-請按照以下JSON格式輸出（注意：在 "original" 欄位中請提供校正後的正確日文）：
-{
-  "translated_texts": [
-    {
-      "original": "校正後的正確日文原文",
-      "translated": "翻譯結果"
-    }
-  ],
-  "new_terminology": [
-    {
-      "japanese": "日文原文",
-      "chinese": "中文翻譯"
-    }
-  ]
-}"""
-        else:
-            base_prompt = """你是一個專業的日文漫畫翻譯師，擅長將日文漫畫對話翻譯成繁體中文。
+請按照以下格式輸出（注意：在第一行請提供校正後的正確日文）：
+1. 校正後的正確日文 → 翻譯結果
+2. 校正後的正確日文 → 翻譯結果
+...
 
-**嚴格規則：絕對不可刪除任何段落！**
-- 必須為每個提供的文字提供對應的翻譯結果
-- 輸出的翻譯數量必須與輸入的文字數量完全一致
-
-翻譯原則：
-1. **絕對禁止**：刪除任何輸入的文字段落！必須為每個輸入提供對應的輸出
-2. 保持漫畫對話的自然語調和情感
-3. 使用台灣常用的繁體中文表達方式
-4. 保留角色的說話特色和個性
-5. 適當處理擬聲詞和感嘆詞
-6. 確保翻譯符合漫畫的語境和氛圍
-7. 發現並標記新的專有名詞（人名、地名、特殊術語等）
-
-輸出格式：
-請按照以下JSON格式輸出：
-{
-  "translated_texts": [
-    {
-      "original": "原文",
-      "translated": "翻譯結果"
-    }
-  ],
-  "new_terminology": [
-    {
-      "japanese": "日文原文",
-      "chinese": "中文翻譯"
-    }
-  ]
-}"""
+如果發現新專有名詞，請在最後列出：
+新專有名詞：
+- 日文原文: 中文翻譯
+- 日文原文: 中文翻譯"""
 
         # 添加專有名詞字典
         if terminology_dict:
@@ -493,73 +404,18 @@ class TextTranslator:
             base_prompt += history_section
         
         # 添加待翻譯文字
-        if image_path:
-            texts_section = f"\n\n待校正和翻譯的 OCR 識別文字（共 {len(texts)} 個，必須全部處理）：\n"
-        else:
-            texts_section = f"\n\n待翻譯文字（共 {len(texts)} 個，必須全部處理）：\n"
-            
+        texts_section = f"\n\n待校正和翻譯的 OCR 識別文字（共 {len(texts)} 個，必須全部處理）：\n"
         for i, text in enumerate(texts, 1):
             texts_section += f"{i}. {text}\n"
         
         base_prompt += texts_section
-        
         base_prompt += f"\n\n**重要提醒：必須輸出 {len(texts)} 個翻譯結果，絕對不可少於這個數量！**\n\n請開始校正和翻譯："
         
         return base_prompt
     
-    def _parse_translation_response_with_terminology(self, response: str, original_texts: List[str]) -> Dict[str, Any]:
+    def _parse_simple_response(self, response: str, original_texts: List[str]) -> Dict[str, Any]:
         """
-        解析包含專有名詞的翻譯回應
-        
-        Args:
-            response: API回應
-            original_texts: 原始文字列表
-            
-        Returns:
-            Dict: 解析後的結果
-        """
-        try:
-            import json
-            import re
-            
-            # 嘗試提取JSON部分
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                json_str = json_match.group(0)
-                try:
-                    result = json.loads(json_str)
-                    
-                    # 驗證結果格式
-                    if 'translated_texts' in result:
-                        translated_texts = result['translated_texts']
-                        new_terminology = result.get('new_terminology', [])
-                        
-                        # 確保翻譯數量匹配
-                        if len(translated_texts) == len(original_texts):
-                            return {
-                                'translated_texts': translated_texts,
-                                'new_terminology': new_terminology
-                            }
-                        else:
-                            print(f"⚠️ 翻譯數量不匹配: 期望 {len(original_texts)}, 得到 {len(translated_texts)}")
-                            print("📝 這可能表示 AI 刪除了某些段落，將使用備用解析方法")
-                    else:
-                        print("⚠️ 回應中沒有找到 translated_texts 欄位")
-                    
-                except json.JSONDecodeError as e:
-                    print(f"⚠️ JSON解析失敗: {e}")
-                    
-            # 如果JSON解析失敗，嘗試簡單文字解析
-            print("⚠️ 使用備用解析方法")
-            return self._fallback_parse_response(response, original_texts)
-            
-        except Exception as e:
-            print(f"⚠️ 解析回應失敗: {e}")
-            return self._fallback_parse_response(response, original_texts)
-    
-    def _fallback_parse_response(self, response: str, original_texts: List[str]) -> Dict[str, Any]:
-        """
-        備用解析方法
+        解析簡單翻譯回應
         
         Args:
             response: API回應
@@ -570,77 +426,90 @@ class TextTranslator:
         """
         lines = response.strip().split('\n')
         translated_texts = []
+        new_terminology_list = []
         
-        # 簡單的行對行匹配
-        translation_lines = [line.strip() for line in lines if line.strip() and not line.startswith('#') and not line.startswith('```')]
+        # 查找翻譯行和新專有名詞
+        in_terminology_section = False
+        translation_lines = []
         
-        print(f"🔍 備用解析: 找到 {len(translation_lines)} 行翻譯，需要 {len(original_texts)} 個結果")
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            if '新專有名詞' in line or 'new terminology' in line.lower():
+                in_terminology_section = True
+                continue
+            
+            if in_terminology_section:
+                # 解析專有名詞
+                if ':' in line or '：' in line:
+                    parts = re.split(r'[:：]', line, 1)
+                    if len(parts) == 2:
+                        jp_term = parts[0].strip().lstrip('- ')
+                        cn_term = parts[1].strip()
+                        if jp_term and cn_term:
+                            new_terminology_list.append({
+                                'japanese': jp_term,
+                                'chinese': cn_term
+                            })
+            else:
+                # 解析翻譯行
+                if '→' in line:
+                    translation_lines.append(line)
+                elif re.match(r'^\d+\.', line):
+                    translation_lines.append(line)
+        
+        # 轉換new_terminology為dict格式
+        new_terminology = {}
+        for term in new_terminology_list:
+            new_terminology[term['japanese']] = term['chinese']
+        
+        print(f"🔍 簡單解析: 找到 {len(translation_lines)} 行翻譯，需要 {len(original_texts)} 個結果")
         
         for i, original in enumerate(original_texts):
             if i < len(translation_lines):
-                translated = translation_lines[i]
-                # 清理翻譯文字
-                translated = re.sub(r'^\d+[\.\)]\s*', '', translated)  # 移除開頭的數字
-                translated = translated.strip()
+                line = translation_lines[i]
+                # 解析翻譯行
+                if '→' in line:
+                    parts = line.split('→', 1)
+                    if len(parts) == 2:
+                        corrected_original = parts[0].strip()
+                        # 移除數字開頭
+                        corrected_original = re.sub(r'^\d+[\.\)]\s*', '', corrected_original)
+                        translated = parts[1].strip()
+                    else:
+                        corrected_original = original
+                        translated = line.strip()
+                else:
+                    # 移除數字開頭
+                    translated = re.sub(r'^\d+[\.\)]\s*', '', line)
+                    corrected_original = original
                 
                 # 如果翻譯結果為空或太短，使用原文
                 if not translated or len(translated) < 1:
                     translated = original
+                    corrected_original = original
             else:
                 # 如果沒有對應翻譯，使用原文
                 translated = original
+                corrected_original = original
                 print(f"⚠️ 第 {i+1} 個文字沒有找到翻譯，使用原文: {original}")
             
             translated_texts.append({
-                'original': original,
-                'translated': translated
+                'original': corrected_original,
+                'translated': translated,
+                'text_direction': 'horizontal',
+                'bubble_type': 'pure_white',
+                'estimated_font_size': 16
             })
         
-        print(f"✅ 備用解析完成: {len(translated_texts)} 個結果")
+        print(f"✅ 簡單解析完成: {len(translated_texts)} 個結果")
         
         return {
             'translated_texts': translated_texts,
-            'new_terminology': []
+            'new_terminology': new_terminology
         }
-    
-    def get_translation_stats(self) -> Dict[str, Any]:
-        """
-        獲取翻譯統計資訊
-        
-        Returns:
-            Dict: 統計資訊
-        """
-        return {
-            'total_api_calls': self.api_call_count,
-            'model_used': self.gemini_client.model,
-            'cache_size': len(self.translation_cache)
-        }
-    
-    def translate_single(self, text: str, terminology_dict: Dict[str, str] = None) -> Dict[str, Any]:
-        """
-        翻譯單個文字
-        
-        Args:
-            text: 要翻譯的文字
-            terminology_dict: 專有名詞字典
-            
-        Returns:
-            Dict: 翻譯結果
-        """
-        result = self.translate_texts([text], terminology_dict)
-        
-        if result['success'] and result['translated_texts']:
-            return {
-                'original': result['translated_texts'][0]['original'],
-                'translated': result['translated_texts'][0]['translated'],
-                'success': True
-            }
-        else:
-            return {
-                'original': text,
-                'translated': text,
-                'success': False
-            }
     
     def _create_fallback_translations(self, texts: List[str]) -> List[Dict[str, str]]:
         """
@@ -661,4 +530,17 @@ class TextTranslator:
                 'estimated_font_size': 16
             }
             for text in texts
-        ] 
+        ]
+    
+    def get_translation_stats(self) -> Dict[str, Any]:
+        """
+        獲取翻譯統計資訊
+        
+        Returns:
+            Dict: 統計資訊
+        """
+        return {
+            'total_api_calls': self.api_call_count,
+            'model_used': self.gemini_client.model,
+            'cache_size': len(self.translation_cache)
+        } 
