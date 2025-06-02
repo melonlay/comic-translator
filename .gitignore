@@ -35,6 +35,9 @@ output/
 rendered/
 stages_results/
 
+# Test images (may contain copyrighted content)
+test_images/
+
 # API keys and config
 .env
 config.local.json
