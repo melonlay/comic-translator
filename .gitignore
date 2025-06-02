@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Model files (large files)
+comic-text-detector/data/*.pt
+comic-text-detector/data/*.onnx
+comic-text-detector/data/*.ckpt
+
+# Output directories
+output/
+rendered/
+stages_results/
+
+# API keys and config
+.env
+config.local.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files and temporary files
+test_*.py
+temp_*
+debug_*
+*.tmp
+
+# Logs
+*.log
+logs/
+
+# Terminology and user data
+terminology_dict.json 
