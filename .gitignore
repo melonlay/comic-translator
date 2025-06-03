@@ -38,6 +38,7 @@ stage2_ocr/
 stage3_reorder/
 stage4_translate/
 stages_results/
+debug/
 
 # Test images (may contain copyrighted content)
 test_images/
