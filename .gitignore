@@ -62,7 +62,6 @@ Thumbs.db
 test_*.py
 test_ocr_correction.py
 temp_*
-debug_*
 *.tmp
 
 # Logs
