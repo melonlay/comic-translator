@@ -130,7 +130,7 @@ class RegionExtractor:
                 'original_bbox': bbox,
                 'rendered_bbox': rendered_bbox,  # 用於渲染的邊界框 - 使用原始精確邊界框
                 'angle': angle,
-                'was_rotated': self.rotation_corrector.should_rotate(angle, 0.1)
+                'was_rotated': self.rotation_corrector.should_rotate(angle, 5)
             }
             
         except Exception as e:

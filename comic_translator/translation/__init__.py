@@ -2,10 +2,21 @@
 Translation Module
 翻譯模組
 
-包含文字重排序和翻譯相關功能
+包含所有翻譯相關的原子化組件
 """
 
-from .text_reorder import TextReorder
 from .text_translator import TextTranslator
+from .text_reorder import TextReorder
+from .translation_core import TranslationCore
+from .translation_flow import TranslationFlow
+from .prompt_manager import PromptManager
+from .response_parser import ResponseParser
 
-__all__ = ["TextReorder", "TextTranslator"] 
+__all__ = [
+    'TextTranslator',
+    'TextReorder', 
+    'TranslationCore',
+    'TranslationFlow',
+    'PromptManager',
+    'ResponseParser'
+] 
