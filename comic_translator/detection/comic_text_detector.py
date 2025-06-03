@@ -113,7 +113,7 @@ class ComicTextDetector:
             
             # 過濾太小的框
             if w >= 5 and h >= 5:
-                text_boxes.append([int(x), int(y), int(w), int(h)])
+                text_boxes.append([int(float(x)), int(float(y)), int(float(w)), int(float(h))])  # 強制轉換為Python int
         
         # 按位置排序（從上到下，從右到左）
         text_boxes.sort(key=lambda box: (box[1], box[0]))
@@ -130,15 +130,72 @@ class ComicTextDetector:
         Returns:
             dict: 包含檢測結果和元數據
         """
-        text_boxes = self.detect(image_path)
+        if self.detector is None:
+            raise RuntimeError("檢測器未初始化")
         
-        # 讀取圖像尺寸
+        # 讀取圖像
         image = cv2.imread(image_path)
-        height, width = image.shape[:2] if image is not None else (0, 0)
+        if image is None:
+            raise ValueError(f"無法讀取圖像: {image_path}")
+        
+        height, width = image.shape[:2]
+        
+        # 執行檢測
+        mask, mask_refined, blk_list = self.detector(
+            image, 
+            refine_mode=self.refinemask_annotation, 
+            keep_undetected_mask=True
+        )
+        
+        # 提取詳細文字框信息
+        text_blocks = []
+        for i, blk in enumerate(blk_list):
+            x1, y1, x2, y2 = blk.xyxy
+            x, y, w, h = max(0, x1), max(0, y1), x2 - x1, y2 - y1
+            
+            # 過濾太小的框
+            if w >= 5 and h >= 5:
+                # 直接從blk對象獲取屬性
+                angle = float(getattr(blk, 'angle', 0))
+                vertical = bool(getattr(blk, 'vertical', False))
+                font_size = int(getattr(blk, 'font_size', 16))
+                lines = getattr(blk, 'lines', [])
+                
+                # 處理lines數組
+                if lines is not None and len(lines) > 0:
+                    processed_lines = []
+                    for line in lines:
+                        if hasattr(line, 'tolist'):
+                            processed_lines.append(line.tolist())
+                        elif isinstance(line, (list, tuple)):
+                            processed_lines.append(list(line))
+                        else:
+                            processed_lines.append(line)
+                    lines = processed_lines
+                else:
+                    lines = []
+                
+                block_info = {
+                    'block_index': i,
+                    'bbox': [int(float(x)), int(float(y)), int(float(w)), int(float(h))],  # xywh格式
+                    'xyxy': [int(float(x1)), int(float(y1)), int(float(x2)), int(float(y2))],  # xyxy格式，用於精確切割
+                    'angle': angle,
+                    'vertical': vertical,
+                    'font_size': font_size,
+                    'lines': lines,
+                }
+                text_blocks.append(block_info)
+        
+        # 按位置排序（從上到下，從右到左）
+        text_blocks.sort(key=lambda block: (block['bbox'][1], block['bbox'][0]))
+        
+        # 為了向下兼容，也提供簡單的bbox列表
+        text_boxes = [block['bbox'] for block in text_blocks]
         
         return {
-            'text_boxes': text_boxes,
-            'total_boxes': len(text_boxes),
+            'text_boxes': text_boxes,  # 向下兼容
+            'text_blocks': text_blocks,  # 詳細信息
+            'total_boxes': len(text_blocks),
             'image_size': [width, height],
             'source_image': str(Path(image_path).absolute()),
             'config': self.config.copy()

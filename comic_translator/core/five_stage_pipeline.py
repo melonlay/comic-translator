@@ -271,6 +271,16 @@ class FiveStagePipeline:
         if not reordered_texts:
             return {'translated_texts': [], 'new_terminology': {}, 'success': False}
         
+        # 讀取stage2的OCR結果以獲取vertical資訊
+        stage2_result = self.stage_manager.load_stage_result(2, image_name)
+        ocr_metadata = {}
+        if stage2_result and stage2_result.get('extracted_texts'):
+            # 建立box_index到OCR結果的映射
+            for item in stage2_result['extracted_texts']:
+                box_index = item.get('box_index')
+                if box_index is not None:
+                    ocr_metadata[box_index] = item
+        
         # 提取文字字串列表（如果reordered_texts是字典列表的話）
         if reordered_texts and isinstance(reordered_texts[0], dict):
             # reordered_texts是字典列表，需要提取text欄位
@@ -299,13 +309,19 @@ class FiveStagePipeline:
             for i, original_item in enumerate(reordered_texts):
                 if i < len(result['translated_texts']):
                     translation_item = result['translated_texts'][i]
+                    
+                    # 從OCR結果中獲取vertical資訊
+                    original_index = original_item.get('original_index')
+                    ocr_info = ocr_metadata.get(original_index, {})
+                    is_vertical = ocr_info.get('vertical', False)
+                    
                     final_translations.append({
                         'original_index': original_item.get('original_index'),
                         'new_order': original_item.get('new_order'),
                         'bbox': original_item.get('bbox'),
                         'original': translation_item['original'],
                         'translated': translation_item['translated'],
-                        'text_direction': translation_item.get('text_direction', 'horizontal'),
+                        'text_direction': 'vertical' if is_vertical else 'horizontal',  # 直接從OCR的vertical欄位決定
                         'bubble_type': translation_item.get('bubble_type', 'pure_white'),
                         'estimated_font_size': translation_item.get('estimated_font_size', 16)
                     })
@@ -319,12 +335,14 @@ class FiveStagePipeline:
             'new_terminology': result['new_terminology'],
             'success': result['success'],
             'history_context_used': len(self.translation_history),
-            'used_image_analysis': image_path is not None
+            'used_image_analysis': image_path is not None,
+            'used_ocr_vertical_info': len(ocr_metadata) > 0
         }
         
         self.stage_manager.save_stage_result(4, image_name, save_result)
         analysis_method = "圖片視覺分析" if image_path else "純文字分析"
-        print(f"✅ 翻譯完成: {len(result['translated_texts'])} 個文字，使用 {analysis_method}")
+        ocr_info_used = f"，使用OCR垂直信息({len(ocr_metadata)}個)" if ocr_metadata else ""
+        print(f"✅ 翻譯完成: {len(result['translated_texts'])} 個文字，使用 {analysis_method}{ocr_info_used}")
         print(f"📚 使用 {len(self.translation_history)} 條歷史上下文")
         print(f"🆕 發現 {len(result['new_terminology'])} 個新專有名詞")
         

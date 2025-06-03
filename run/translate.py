@@ -34,14 +34,16 @@ import json
 class ComicTranslator:
     """漫畫翻譯器主類"""
     
-    def __init__(self, output_dir: str = "output"):
+    def __init__(self, output_dir: str = "output", debug_mode: bool = False):
         """
         初始化翻譯器
         
         Args:
             output_dir: 輸出目錄
+            debug_mode: 是否啟用debug模式
         """
         self.output_dir = Path(output_dir)
+        self.debug_mode = debug_mode
         
         # 創建各階段的輸出目錄
         self.stage1_dir = self.output_dir / "stage1_detection"
@@ -59,7 +61,7 @@ class ComicTranslator:
         # 初始化各階段組件
         print("🔧 初始化組件...")
         self.detector = ComicTextDetector()
-        self.ocr = MangaOCRExtractor()
+        self.ocr = MangaOCRExtractor(debug_mode=debug_mode)
         
         # 初始化Gemini客戶端和翻譯器
         self.gemini_client = GeminiClient()
@@ -76,6 +78,8 @@ class ComicTranslator:
         print(f"🔄 Stage3 目錄: {self.stage3_dir}")
         print(f"🌏 Stage4 目錄: {self.stage4_dir}")
         print(f"📚 專有名詞: {len(self.terminology_dict)} 個詞彙")
+        if debug_mode:
+            print(f"🐛 Debug模式已啟用")
     
     def _load_terminology_dict(self) -> dict:
         """載入專有名詞字典"""
@@ -305,7 +309,10 @@ class ComicTranslator:
     
     def _stage2_ocr(self, image_path: Path, stage1_result: dict) -> dict:
         """階段2: 文字識別"""
-        result_data = self.ocr.extract_from_boxes(str(image_path), stage1_result['text_boxes'])
+        text_boxes = stage1_result['text_boxes']
+        text_blocks = stage1_result.get('text_blocks', None)
+        
+        result_data = self.ocr.extract_from_boxes(str(image_path), text_boxes, text_blocks)
         
         result = {
             'extracted_texts': result_data,
@@ -319,7 +326,15 @@ class ComicTranslator:
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
             
+            # 統計旋轉校正的文字塊
+            rotated_count = sum(1 for item in result_data if item.get('angle', 0) != 0)
+            vertical_count = sum(1 for item in result_data if item.get('vertical', False))
+            
             print(f"   ✅ 識別到 {len(result['extracted_texts'])} 段文字")
+            if rotated_count > 0:
+                print(f"   🔄 旋轉校正: {rotated_count} 個文字塊")
+            if vertical_count > 0:
+                print(f"   📝 直書文字: {vertical_count} 個文字塊")
             print(f"   💾 結果保存: {output_file.name}")
             return result
         else:
@@ -353,20 +368,64 @@ class ComicTranslator:
         """階段4: 文字翻譯"""
         reordered_texts = stage3_result['reordered_texts']
         
-        # 準備文字列表和對應的bbox信息
+        # 讀取stage2的OCR結果以獲取完整的元數據信息
+        stage2_file = self.stage2_dir / f"{image_path.stem}_stage2_ocr.json"
+        stage2_metadata = {}
+        if stage2_file.exists():
+            try:
+                with open(stage2_file, 'r', encoding='utf-8') as f:
+                    stage2_data = json.load(f)
+                    # 建立box_index到OCR結果的映射
+                    for item in stage2_data.get('extracted_texts', []):
+                        box_index = item.get('box_index')
+                        if box_index is not None:
+                            stage2_metadata[box_index] = item
+            except Exception as e:
+                print(f"   ⚠️ 無法讀取stage2結果: {e}")
+        
+        # 準備文字列表和對應的元數據信息
         texts_to_translate = []
-        bbox_mapping = []
+        metadata_mapping = []
         
         for item in reordered_texts:
             if isinstance(item, dict):
                 text = item.get('text', '')
                 bbox = item.get('bbox', [])
+                original_index = item.get('original_index')  # 使用original_index而不是box_index
+                
                 if text and bbox:
                     texts_to_translate.append(text)
-                    bbox_mapping.append(bbox)
+                    
+                    # 從stage2結果中獲取完整的元數據
+                    metadata = {
+                        'bbox': bbox,  # 原始檢測邊界框
+                        'rendered_bbox': bbox,  # 默認使用原始bbox
+                        'angle': 0.0,
+                        'vertical': False,
+                        'was_rotated': False
+                    }
+                    
+                    # 如果有對應的stage2數據，使用更完整的信息
+                    if original_index is not None and original_index in stage2_metadata:
+                        stage2_item = stage2_metadata[original_index]
+                        metadata.update({
+                            'rendered_bbox': stage2_item.get('rendered_bbox', bbox),
+                            'angle': stage2_item.get('angle', 0.0),
+                            'vertical': stage2_item.get('vertical', False),
+                            'was_rotated': stage2_item.get('was_rotated', False)
+                        })
+                        print(f"   📐 文字 '{text[:15]}...' 使用旋轉校正邊界框: {metadata['rendered_bbox']}")
+                    
+                    metadata_mapping.append(metadata)
             elif isinstance(item, str):
                 texts_to_translate.append(item)
-                bbox_mapping.append([0, 0, 100, 50])  # 默認bbox
+                metadata_mapping.append({
+                    'bbox': [0, 0, 100, 50],
+                    'rendered_bbox': [0, 0, 100, 50],
+                    'angle': 0.0,
+                    'vertical': False,
+                    'was_rotated': False
+                })
         
         if not texts_to_translate:
             print("   ⚠️ 沒有找到需要翻譯的文字")
@@ -384,19 +443,28 @@ class ComicTranslator:
             print("   ❌ 翻譯失敗")
             return None
         
-        # 合併翻譯結果與bbox信息
+        # 合併翻譯結果與完整的元數據信息
         translated_texts = []
         translations = translation_result['translated_texts']
         
         for i, translation_item in enumerate(translations):
-            # 確保有對應的bbox
-            bbox = bbox_mapping[i] if i < len(bbox_mapping) else [0, 0, 100, 50]
+            # 獲取對應的元數據
+            metadata = metadata_mapping[i] if i < len(metadata_mapping) else {
+                'bbox': [0, 0, 100, 50],
+                'rendered_bbox': [0, 0, 100, 50],
+                'angle': 0.0,
+                'vertical': False,
+                'was_rotated': False
+            }
             
             translated_item = {
                 'original': translation_item.get('original', ''),
                 'translated': translation_item.get('translated', ''),
-                'bbox': bbox,
-                'text_direction': translation_item.get('text_direction', 'horizontal'),
+                'bbox': metadata['bbox'],  # 原始檢測邊界框
+                'rendered_bbox': metadata['rendered_bbox'],  # 旋轉校正後的渲染邊界框
+                'angle': metadata['angle'],  # 旋轉角度
+                'was_rotated': metadata['was_rotated'],  # 是否進行了旋轉校正
+                'text_direction': 'vertical' if metadata['vertical'] else 'horizontal',  # 直接從OCR的vertical欄位決定
                 'bubble_type': translation_item.get('bubble_type', 'pure_white'),
                 'estimated_font_size': translation_item.get('estimated_font_size', 16)
             }
@@ -434,6 +502,7 @@ def main():
     parser.add_argument('--output', '-o', default='output', help='輸出目錄 (預設: output)')
     parser.add_argument('--batch', '-b', action='store_true', help='批量翻譯模式')
     parser.add_argument('--force', '-f', action='store_true', help='強制重新翻譯，忽略現有結果')
+    parser.add_argument('--debug', '-d', action='store_true', help='啟用debug模式，保存子區域圖片到debug/資料夾')
     
     args = parser.parse_args()
     
@@ -444,9 +513,12 @@ def main():
         print("⚡ 強制模式：將重新翻譯所有圖片")
     else:
         print("💾 智能模式：將跳過已有翻譯結果的圖片")
+        
+    if args.debug:
+        print("🐛 Debug模式：將保存子區域圖片到debug/資料夾")
     
     # 初始化翻譯器
-    translator = ComicTranslator(output_dir=args.output)
+    translator = ComicTranslator(output_dir=args.output, debug_mode=args.debug)
     
     # 批量翻譯模式
     if args.batch:

@@ -2,121 +2,147 @@
 Manga OCR Extractor
 漫畫OCR擷取器
 
-使用manga-ocr進行日文文字擷取
+使用manga-ocr進行日文文字擷取，支援旋轉校正和debug模式
+原子化設計：組合各個專門的功能模組
 """
 
-import cv2
-import torch
-from PIL import Image
-from pathlib import Path
-from typing import List, Dict, Union
+from typing import List, Dict
+from .ocr_initializer import OCRInitializer
+from .rotation_corrector import RotationCorrector
+from .debug_saver import DebugSaver
+from .region_extractor import RegionExtractor
 
 
 class MangaOCRExtractor:
-    """漫畫OCR擷取器"""
+    """漫畫OCR擷取器 - 原子化組合器"""
     
-    def __init__(self):
-        """初始化OCR擷取器"""
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.ocr_model = None
-        self._init_ocr()
-    
-    def _init_ocr(self):
-        """初始化OCR模型"""
-        try:
-            import manga_ocr
-            self.ocr_model = manga_ocr.MangaOcr()
-            print(f"✅ Manga OCR初始化完成 (設備: {self.device})")
-            
-            if self.device == 'cuda':
-                print(f"🚀 GPU: {torch.cuda.get_device_name()}")
-                
-        except Exception as e:
-            print(f"❌ Manga OCR初始化失敗: {e}")
-            raise
-    
-    def extract_from_region(self, image: Union[str, Image.Image], bbox: List[int]) -> str:
+    def __init__(self, debug_mode: bool = False, debug_dir: str = "debug"):
         """
-        從指定區域擷取文字
+        初始化OCR擷取器
         
         Args:
-            image: 圖像路徑或PIL Image
-            bbox: 文字框座標 [x, y, w, h]
+            debug_mode: 是否啟用debug模式
+            debug_dir: debug檔案儲存目錄
+        """
+        # 初始化各個原子化模組
+        self.ocr_initializer = OCRInitializer()
+        self.rotation_corrector = RotationCorrector()
+        self.debug_saver = DebugSaver(debug_mode, debug_dir)
+        self.region_extractor = RegionExtractor(self.rotation_corrector, self.debug_saver)
+        
+        # 初始化OCR模型
+        self.ocr_model = self.ocr_initializer.initialize_manga_ocr()
+    
+    def extract_from_region(self, image_path: str, bbox: List[int], block_index: int = 0, 
+                           angle: float = 0.0, debug_mode: bool = False, xyxy: List[int] = None) -> Dict:
+        """
+        從圖片的指定區域提取文字
+        
+        Args:
+            image_path: 圖片路徑
+            bbox: 邊界框 [x, y, w, h]
+            block_index: 文字塊索引（用於debug文件命名）
+            angle: 旋轉角度（度）
+            debug_mode: 是否啟用debug模式（已棄用，使用構造函數中的設置）
+            xyxy: 精確的xyxy格式邊界框 [x1, y1, x2, y2]，優先使用
             
         Returns:
-            str: 擷取的文字
+            Dict: 包含文字和邊界框信息的字典
         """
-        if self.ocr_model is None:
-            raise RuntimeError("OCR模型未初始化")
+        # 使用區域提取器提取圖像區域
+        extraction_result = self.region_extractor.extract_region(
+            image_path, bbox, block_index, angle, xyxy
+        )
         
-        # 處理輸入圖像
-        if isinstance(image, str):
-            image_cv = cv2.imread(image)
-            if image_cv is None:
-                raise ValueError(f"無法讀取圖像: {image}")
-        else:
-            # 假設是PIL Image，轉換為opencv格式
-            import numpy as np
-            image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        pil_image = extraction_result['pil_image']
+        if pil_image is None:
+            return {
+                'text': "",
+                'original_bbox': bbox,
+                'rendered_bbox': bbox,
+                'angle': angle,
+                'was_rotated': False
+            }
         
-        # 裁切區域
-        x, y, w, h = bbox
-        region = image_cv[y:y+h, x:x+w]
+        # 執行OCR
+        text = self.ocr_model(pil_image)
         
-        if region.size == 0:
-            return ""
-        
-        # 轉換為PIL格式
-        region_pil = Image.fromarray(cv2.cvtColor(region, cv2.COLOR_BGR2RGB))
-        
-        # OCR擷取
-        try:
-            text = self.ocr_model(region_pil)
-            return text.strip() if text else ""
-        except Exception as e:
-            print(f"⚠️ OCR擷取失敗: {e}")
-            return ""
+        # 返回包含邊界框信息的完整信息
+        return {
+            'text': text if text else "",
+            'original_bbox': extraction_result['original_bbox'],
+            'rendered_bbox': extraction_result['rendered_bbox'],
+            'angle': extraction_result['angle'],
+            'was_rotated': extraction_result['was_rotated']
+        }
     
-    def extract_from_boxes(self, image_path: str, text_boxes: List[List[int]]) -> List[Dict]:
+    def extract_from_boxes(self, image_path: str, text_boxes: List[List[int]], 
+                          text_blocks: List[Dict] = None) -> List[Dict]:
         """
         從多個文字框擷取文字
         
         Args:
             image_path: 圖像路徑
-            text_boxes: 文字框座標列表
+            text_boxes: 文字框座標列表（向下兼容）
+            text_blocks: 詳細文字塊信息（包含旋轉角度）
             
         Returns:
             List[Dict]: 擷取結果列表
         """
-        if not text_boxes:
-            return []
+        # 如果沒有提供詳細信息，則使用簡單的bbox列表
+        if text_blocks is None:
+            if not text_boxes:
+                return []
+            text_blocks = [
+                {
+                    'block_index': i,
+                    'bbox': bbox,
+                    'angle': 0.0,
+                    'vertical': False
+                }
+                for i, bbox in enumerate(text_boxes)
+            ]
         
-        # 讀取圖像
-        image = cv2.imread(image_path)
-        if image is None:
-            raise ValueError(f"無法讀取圖像: {image_path}")
+        if not text_blocks:
+            return []
         
         results = []
         successful_count = 0
         
-        for i, bbox in enumerate(text_boxes):
-            print(f"📖 處理文字框 {i+1}/{len(text_boxes)}")
+        for block in text_blocks:
+            block_index = block.get('block_index', 0)
+            bbox = block['bbox']
+            xyxy = block.get('xyxy', None)  # 取得xyxy格式座標
+            angle = block.get('angle', 0.0)
+            vertical = block.get('vertical', False)
             
-            text = self.extract_from_region(image_path, bbox)
+            print(f"📖 處理文字框 {block_index+1}/{len(text_blocks)}")
+            if abs(angle) > 0.1:
+                print(f"   🔄 檢測到旋轉角度: {angle:.1f}°")
+            if vertical:
+                print(f"   📝 檢測到直書文字")
             
-            if text:
+            result = self.extract_from_region(image_path, bbox, block_index, angle, self.debug_saver.is_enabled(), xyxy)
+            
+            if result['text']:
                 results.append({
-                    'box_index': i,
-                    'bbox': bbox,
-                    'text': text,
+                    'box_index': block_index,
+                    'bbox': bbox,  # 原始檢測的邊界框
+                    'rendered_bbox': result['rendered_bbox'],  # 用於渲染的邊界框
+                    'text': result['text'],
+                    'angle': angle,
+                    'vertical': vertical,
+                    'was_rotated': result['was_rotated'],
                     'confidence': 0.9  # manga-ocr沒有提供置信度，使用固定值
                 })
                 successful_count += 1
-                print(f"  ✅ '{text}'")
+                print(f"  ✅ '{result['text']}'")
+                if result['was_rotated']:
+                    print(f"     🔄 旋轉校正: {bbox} → {result['rendered_bbox']}")
             else:
                 print(f"  ⚠️ 未識別到文字")
         
-        print(f"🎯 成功擷取 {successful_count}/{len(text_boxes)} 個文字框")
+        print(f"🎯 成功擷取 {successful_count}/{len(text_blocks)} 個文字框")
         return results
     
     def extract_single(self, image_path: str, bbox: List[int]) -> Dict:
@@ -130,12 +156,12 @@ class MangaOCRExtractor:
         Returns:
             Dict: 擷取結果
         """
-        text = self.extract_from_region(image_path, bbox)
+        result = self.extract_from_region(image_path, bbox)
         
         return {
             'bbox': bbox,
-            'text': text,
-            'confidence': 0.9 if text else 0.0
+            'text': result['text'],
+            'confidence': 0.9 if result['text'] else 0.0
         }
     
     def get_device_info(self) -> Dict:
@@ -145,13 +171,4 @@ class MangaOCRExtractor:
         Returns:
             Dict: 設備資訊
         """
-        info = {
-            'device': self.device,
-            'cuda_available': torch.cuda.is_available()
-        }
-        
-        if torch.cuda.is_available():
-            info['gpu_name'] = torch.cuda.get_device_name()
-            info['gpu_memory'] = torch.cuda.get_device_properties(0).total_memory
-        
-        return info 
+        return self.ocr_initializer.get_device_info() 
